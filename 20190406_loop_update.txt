@@ -1,0 +1,76 @@
+SELECT * 
+	FROM (
+			SELECT ROW_NUMBER() OVER(PARTITION BY b.seq ORDER BY work_date DESC) as rnum, b.seq, b.child_class, work_date
+				FROM child_brother_attendance a
+				INNER JOIN child_brother_relation b ON a.child_brother_relation_seq = b.seq
+			WHERE b.child_class <> 0 and a.class_type is null
+	) a
+order by seq, work_date
+
+
+select * from child_brother_attendance where child_brother_relation_seq = 186 order by work_date 
+
+
+select count(*) from child_brother_attendance where class_type is null
+select count(*) from child_brother_attendance where class_type is not null
+
+--update child_brother_attendance set class_type = null
+
+
+DO $$ 
+DECLARE
+  counter integer := 0;
+  rval integer[] DEFAULT '{}';
+  arow record;
+BEGIN 
+	FOR arow IN SELECT * 
+					FROM (
+							SELECT ROW_NUMBER() OVER(PARTITION BY b.seq ORDER BY work_date DESC) as rnum, b.seq, b.child_class, work_date as last_shift_date
+								FROM child_brother_attendance a
+								INNER JOIN child_brother_relation b ON a.child_brother_relation_seq = b.seq
+							WHERE b.child_class <> 0
+					) a
+				WHERE a.rnum = 1   
+    LOOP
+		--IF arow.work_date >= '2019-04-01' THEN
+			IF EXISTS (SELECT 1 FROM child_brother_attendance WHERE work_date between '2017-04-01' and '2018-03-31' AND child_brother_relation_seq = arow.seq) THEN
+			   IF arow.child_class > 2 AND arow.last_shift_date >= '2019-04-01' THEN
+					 update child_brother_attendance set class_type = arow.child_class-2 where work_date between '2017-04-01' and '2018-03-31' AND child_brother_relation_seq = arow.seq;
+					 update child_brother_attendance set class_type = arow.child_class-1 where work_date between '2018-04-01' and '2019-03-31' AND child_brother_relation_seq = arow.seq;
+					 update child_brother_attendance set class_type = arow.child_class where work_date > '2019-04-01' AND child_brother_relation_seq = arow.seq;
+			   ELSIF arow.child_class > 1 AND ('2018-04-01' <= arow.last_shift_date AND arow.last_shift_date <= '2019-03-31') THEN
+			   		 update child_brother_attendance set class_type = arow.child_class-1 where work_date between '2017-04-01' and '2018-03-31' AND child_brother_relation_seq = arow.seq;
+			   		 update child_brother_attendance set class_type = arow.child_class where work_date between '2018-04-01' and '2019-03-31' AND child_brother_relation_seq = arow.seq;					 
+			   ELSE
+					rval := array_append(rval, arow.seq);
+			   END IF;
+			ELSE
+				IF EXISTS (SELECT 1 FROM child_brother_attendance WHERE work_date between '2018-04-01' and '2019-03-31' AND child_brother_relation_seq = arow.seq) THEN
+				   IF arow.child_class > 1 AND arow.last_shift_date >= '2019-04-01' THEN
+						 update child_brother_attendance set class_type = arow.child_class-1 where work_date between '2018-04-01' and '2019-03-31' AND child_brother_relation_seq = arow.seq;
+						 update child_brother_attendance set class_type = arow.child_class where work_date > '2019-04-01' AND child_brother_relation_seq = arow.seq;
+				   ELSIF ('2018-04-01' <= arow.last_shift_date AND arow.last_shift_date <= '2019-03-31') THEN
+				   		 update child_brother_attendance set class_type = arow.child_class where work_date between '2018-04-01' and '2019-03-31' AND child_brother_relation_seq = arow.seq;
+				   ELSE 
+						rval := array_append(rval, arow.seq);
+				   END IF;
+				ELSE
+					update child_brother_attendance set class_type = arow.child_class where work_date > '2019-04-01' AND child_brother_relation_seq = arow.seq;
+				END IF;
+			END IF;
+		--END IF;
+		
+-- 		IF '2018-04-01' <= arow.work_date AND arow.work_date <= '2019-03-31' THEN
+-- 			IF EXISTS (SELECT 1 FROM child_brother_attendance WHERE work_date between '2017-04-01' and '2018-03-31' AND child_brother_relation_seq = arow.seq) THEN
+-- 			   IF arow.child_class > 1 THEN
+-- 					 update child_brother_attendance set class_type = arow.child_class-1 where work_date between '2017-04-01' and '2018-03-31' AND child_brother_relation_seq = arow.seq;
+-- 					 update child_brother_attendance set class_type = arow.child_class where work_date between '2018-04-01' and '2019-03-31' AND child_brother_relation_seq = arow.seq;
+-- 			   ELSE 
+-- 					rval := array_append(rval, arow.seq);
+-- 			   END IF;			
+-- 			END IF;
+-- 		END IF;
+	END LOOP;
+	
+	RAISE NOTICE '%', array_to_string(rval, ',');
+END $$;
